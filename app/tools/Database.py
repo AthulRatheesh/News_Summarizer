@@ -13,7 +13,7 @@ def create_connection():
             user=os.getenv('DB_USER'),
             password=os.getenv('DB_PASSWORD')
         )
-        print("Connected to MySQL database")
+        print("Connected to PostgreSQL database")
         return conn
 
     except Error as e:
@@ -37,8 +37,3 @@ def create_table():
         conn.close()
     except Error as e:
         print(f"Error: {e}")
-
-if __name__ == "__main__":
-    create_table()
-    # Open Command Prompt as Administrator
-
