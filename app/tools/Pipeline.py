@@ -1,9 +1,9 @@
 import json
 import os
-import aiohttp
+import requests
 from dotenv import load_dotenv
 load_dotenv()
-from Database import create_connection,create_table
+from tools.Database import create_connection,create_table
 from psycopg2 import Error
 import nltk
 from nltk.corpus import stopwords
@@ -25,6 +25,7 @@ def temp_connection():
         print("PostgreSQL connection is established")
         return conn
 
+
 class NewsDownloader:
     def __init__(self):
         self.apikey = os.getenv('GNEWS_API_KEY')
@@ -32,38 +33,45 @@ class NewsDownloader:
         self.url = f"https://gnews.io/api/v4/top-headlines?category={self.category}&lang=en&country=us&max=10&apikey={self.apikey}"
         create_table()
 
-    async def raw_get_data(self):
+    def raw_get_data(self):
         conn = temp_connection()
         if conn is None:
             print("Error connecting to PostgreSQL database")
-        else:
+            return
+
+        try:
             cursor = conn.cursor()
-            async with aiohttp.ClientSession() as session:
-                async with session.get(self.url) as response:
-                    if response.status != 200:
-                        print(f"Error: {response.status}")
-                        return None
-                    data = json.loads(response.read().decode("utf-8"))
-                    articles = data["articles"]
-                    print(len(articles))
+            with requests.Session() as session:
+                response = session.get(self.url)
+                if response.status_code != 200:
+                    print(f"Error: {response.status_code}")
+                    return None
 
-                    for i in range(len(articles)):
-                        # articles[i].title
-                        print(f"Title: {articles[i]['title']}")
-                        # articles[i].description
-                        print(f"Description: {articles[i]['description']}")
-                        # You can replace {property} below with any of the article properties returned by the API.
-                        # articles[i].{property}
-                        # print(f"{articles[i]['{property}']}")
-                        print(f"PublishedAt: {articles[i]['publishedAt']}")
-                        try:
-                            query = """INSERT INTO raw_articles (title, description, publishedAt) VALUES (%s, %s, %s)"""
+                data = response.json()  # Use json() instead of json.loads()
+                articles = data["articles"]
+                print(len(articles))
 
-                            cursor.execute(query,(articles[i]['title'], articles[i]['description'], articles[i]['publishedAt']))
-                            conn.commit()
-                        except Error as e:
-                            print(f"Error: {e}")
-        conn.close()
+                for article in articles:
+                    print(f"Title: {article['title']}")
+                    print(f"Description: {article['description']}")
+                    print(f"PublishedAt: {article['publishedAt']}")
+
+                    try:
+                        query = """INSERT INTO raw_articles (title, description, publishedAt) 
+                                 VALUES (%s, %s, %s)"""
+                        cursor.execute(query, (
+                            article['title'],
+                            article['description'],
+                            article['publishedAt']
+                        ))
+                        conn.commit()
+                    except Error as e:
+                        print(f"Error: {e}")
+
+        except Exception as e:
+            print(f"Error during data fetching: {e}")
+        finally:
+            conn.close()
 
 
 class NewsProcessor:
@@ -81,14 +89,14 @@ class NewsProcessor:
 
     def process_data(self):
         for i in self.articles:
-            print("Raw Data")
-            print(i[1])
-            print(i[2])
-            print(i[3])
-            print("--------------------------------------------------")
-            print("Processed Data")
+            # print("Raw Data")
+            # print(i[1])
+            # print(i[2])
+            # print(i[3])
+            # print("--------------------------------------------------")
+            # print("Processed Data")
             article = self.preprocessor.preprocess_article(i)
-            print(article)
+            # print(article)
             self.conn = temp_connection()
             self.conn.cursor().execute("INSERT INTO processed_articles (title, description, publishedAt) VALUES (%s, %s, %s)", (article['title'], article['description'], article['publishedAt']))
             self.conn.commit()
@@ -128,10 +136,3 @@ class TextPreprocessor:
             return preprocessed_article
         except Exception as e:
             print(f"Error: {e}")
-
-if __name__ == "__main__":
-    gnews1 = NewsDownloader()
-    gnews1.raw_get_data()
-    process = NewsProcessor()
-    process.process_data()
-
